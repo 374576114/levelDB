@@ -13,6 +13,7 @@
 
 namespace leveldb {
 
+enum TableType;
 struct Options;
 
 class BlockBuilder {
@@ -27,7 +28,8 @@ class BlockBuilder {
 
   // REQUIRES: Finish() has not been called since the last call to Reset().
   // REQUIRES: key is larger than any previously added key
-  void Add(const Slice& key, const Slice& value);
+  // 默认就是ImmSST中的KV方式
+  void Add(const Slice& key, const Slice& value, TableType = ImmSST);
 
   // Finish building the block and return a slice that refers to the
   // block contents.  The returned slice will remain valid for the

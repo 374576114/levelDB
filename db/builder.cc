@@ -14,6 +14,7 @@
 
 namespace leveldb {
 
+enum TableType;
 /* 主要就是根据iter，也就是一个memtable，将其中的所有kv（data，meta，etc）写入文件 */
 Status BuildTable(const std::string& dbname, Env* env, const Options& options,
                   TableCache* table_cache, Iterator* iter, FileMetaData* meta) {
@@ -30,6 +31,7 @@ Status BuildTable(const std::string& dbname, Env* env, const Options& options,
     }
 
     TableBuilder* builder = new TableBuilder(options, file);
+		builder->SetTableType(ImmSST);
     meta->smallest.DecodeFrom(iter->key());
     for (; iter->Valid(); iter->Next()) {
       Slice key = iter->key();

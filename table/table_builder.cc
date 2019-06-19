@@ -92,7 +92,7 @@ Status TableBuilder::ChangeOptions(const Options& options) {
   return Status::OK();
 }
 
-void TableBuilder::Add(const Slice& key, const Slice& value) {
+void TableBuilder::Add(const Slice& key, const Slice& value, TableType type) {
   Rep* r = rep_;
   assert(!r->closed);
   if (!ok()) return;
@@ -101,6 +101,8 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
     assert(r->options.comparator->Compare(key, Slice(r->last_key)) > 0);
   }
 
+  // 每块block开始时，先算最小值(比key小或者等于，大于last_key)，
+  // 作为index加到index_block中
   if (r->pending_index_entry) {
     assert(r->data_block.empty());
     r->options.comparator->FindShortestSeparator(&r->last_key, key);
@@ -114,9 +116,9 @@ void TableBuilder::Add(const Slice& key, const Slice& value) {
     r->filter_block->AddKey(key);
   }
 
-  r->last_key.assign(key.data(), key.size());
+	r->last_key.assign(key.data(), key.size());
   r->num_entries++;
-  r->data_block.Add(key, value);
+	r->data_block.Add(key, value, type);
 
   const size_t estimated_block_size = r->data_block.CurrentSizeEstimate();
   if (estimated_block_size >= r->options.block_size) {

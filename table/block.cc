@@ -15,6 +15,7 @@
 #include "util/logging.h"
 
 namespace leveldb {
+enum TableType;
 
 inline uint32_t Block::NumRestarts() const {
   assert(size_ >= sizeof(uint32_t));
@@ -93,6 +94,10 @@ class Block::Iter : public Iterator {
   std::string key_;
   Slice value_;
   Status status_;
+  TableType type_;
+  uint64_t ifile_number_, ioffset_, isize_;
+  TableCache *table_;  // Use the env_ , dbname etc
+  char *data_space_;
 
   inline int Compare(const Slice& a, const Slice& b) const {
     return comparator_->Compare(a, b);
@@ -120,15 +125,18 @@ class Block::Iter : public Iterator {
 
  public:
   Iter(const Comparator* comparator, const char* data, uint32_t restarts,
-       uint32_t num_restarts)
+       uint32_t num_restarts, TableCache *table = nullptr)
       : comparator_(comparator),
         data_(data),
         restarts_(restarts),
         num_restarts_(num_restarts),
         current_(restarts_),
-        restart_index_(num_restarts_) {
+        restart_index_(num_restarts_),
+        table_(table),
+        data_space_(nullptr) {
     assert(num_restarts_ > 0);
   }
+  virtual ~Iter() { if (data_space_ != nullptr) delete[] data_space_; }
 
   virtual bool Valid() const { return current_ < restarts_; }
   virtual Status status() const { return status_; }
@@ -136,7 +144,22 @@ class Block::Iter : public Iterator {
     assert(Valid());
     return key_;
   }
-  virtual Slice value() const {
+  virtual Slice value() {
+    assert(Valid());
+
+    // 回收上次读取时申请的空间
+    if (data_space_ != nullptr) {
+      delete[] data_space_;
+      data_space_ = nullptr;
+    }
+    
+    if (type_ == IndexSST) { // 因为value是指针，所以需要从对应文件中读取
+        value_ = ReadValueFromPointer(ifile_number_, ioffset_, isize_);
+    }
+    return value_;
+  }
+  
+  virtual Slice pointer_value() const {
     assert(Valid());
     return value_;
   }
@@ -249,7 +272,14 @@ class Block::Iter : public Iterator {
     } else {
       key_.resize(shared);        // 只获取前面共享部分
       key_.append(p, non_shared); // 添加非共享
-      value_ = Slice(p + non_shared, value_length);
+      value_ = Slice(p + non_shared, value_length - sizeof(char));
+      type_ = static_cast<TableType>(*(p + non_shared + value_length - sizeof(char)));
+      if (type_ == IndexSST) {
+        Slice tmp = value_;
+        GetVarint64(&tmp, &ifile_number_);
+        GetVarint64(&tmp, &ioffset_);
+        GetVarint64(&tmp, &isize_);
+      }
       while (restart_index_ + 1 < num_restarts_ &&
              GetRestartPoint(restart_index_ + 1) < current_) {
         ++restart_index_;
@@ -257,9 +287,58 @@ class Block::Iter : public Iterator {
       return true;
     }
   }
+
+  virtual void GetIteratorInfo(uint64_t* file_number, uint64_t* off, uint64_t* size) {
+    if (type_ == ImmSST) {
+      *file_number = file_number_;
+      *off = offset_;
+      *size = size_;
+    } else if (type_ == IndexSST) { 
+      *file_number = ifile_number_;
+      *off = ioffset_;
+      *size = isize_;
+    }
+  }
+  // Need to delete[] result.data
+  Slice ReadValueFromPointer(uint64_t file_number, uint64_t offset, 
+    uint64_t size) {
+    std::string fname = TableFileName(table_->dbname_, file_number);
+    RandomAccessFile *file;
+    Status s = table_->env_->NewRandomAccessFile(fname, &file);
+    if (!s.ok()) {
+      fprintf(stderr, "% open file %s error\n", __FUNCTION__, fname.c_str());
+      return Slice();
+    }
+
+    assert(data_space_ == nullptr);
+    BlockHandle handle;
+    BlockContents result;
+    Slice value;
+    handle.set_offset(offset);
+    handle.set_size(size);
+
+    s = ReadBlock(file, ReadOptions(), &handle, &result);
+    if (!s.ok()) {
+      fprintf(stderr, "% read file %s error\n", __FUNCTION__, fname.c_str());
+      if (result.heap_allocated)
+        delete[] result.data;
+      return Slice();
+    }
+
+    Block *block = new Block(result);
+    assert(block != nullptr);
+    Iterator *iter = block->NewIterator(comparator_, table_);
+    iter->Seek(Slice(key_));
+    assert(iter->Valid());
+    data_space_ = result.data.data();
+    value = iter->value();
+    
+    delete iter;
+    return value;
+  }
 };
 
-Iterator* Block::NewIterator(const Comparator* comparator) {
+Iterator* Block::NewIterator(const Comparator* comparator, TableCache *table = nullptr) {
   if (size_ < sizeof(uint32_t)) {
     return NewErrorIterator(Status::Corruption("bad block contents"));
   }
@@ -267,7 +346,7 @@ Iterator* Block::NewIterator(const Comparator* comparator) {
   if (num_restarts == 0) {
     return NewEmptyIterator();
   } else {
-    return new Iter(comparator, data_, restart_offset_, num_restarts);
+    return new Iter(comparator, data_, restart_offset_, num_restarts, table);
   }
 }
 

@@ -154,7 +154,8 @@ static void ReleaseBlock(void* arg, void* h) {
 // into an iterator over the contents of the corresponding block.
 Iterator* Table::BlockReader(void* arg, const ReadOptions& options,
                              const Slice& index_value) {
-  Table* table = reinterpret_cast<Table*>(arg);
+  auto pair = reinterpret_cast<std::pair<const_cast<Table*>, TableCache*>*>(arg);
+  Table* table = pair.first;
   Cache* block_cache = table->rep_->options.block_cache;
   Block* block = nullptr;
   Cache::Handle* cache_handle = nullptr;
@@ -195,7 +196,7 @@ Iterator* Table::BlockReader(void* arg, const ReadOptions& options,
 
   Iterator* iter;
   if (block != nullptr) {
-    iter = block->NewIterator(table->rep_->options.comparator);
+    iter = block->NewIterator(table->rep_->options.comparator, pair->second);
     if (cache_handle == nullptr) {
       iter->RegisterCleanup(&DeleteBlock, block, nullptr);
     } else {
@@ -207,15 +208,17 @@ Iterator* Table::BlockReader(void* arg, const ReadOptions& options,
   return iter;
 }
 
-Iterator* Table::NewIterator(const ReadOptions& options) const {
+Iterator* Table::NewIterator(const ReadOptions& options, TableCache *table = nullptr) const {
+  auto arg = std::make_pair<const_cast<Table*>(this), table>;
   return NewTwoLevelIterator(
       rep_->index_block->NewIterator(rep_->options.comparator),
-      &Table::BlockReader, const_cast<Table*>(this), options);
+      &Table::BlockReader, &arg, options);
 }
 
 Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
                           void (*handle_result)(void*, const Slice&,
-                                                const Slice&)) {
+                                                const Slice&),
+                                                TableCache *table) {
   Status s;
   Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
   iiter->Seek(k);
@@ -227,7 +230,8 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
         !filter->KeyMayMatch(handle.offset(), k)) {
       // Not found
     } else {
-      Iterator* block_iter = BlockReader(this, options, iiter->value());
+      auto pair = std::make_pair(const_cast<Table *>(this), table);
+      Iterator* block_iter = BlockReader(&pair, options, iiter->value());
       block_iter->Seek(k);
       if (block_iter->Valid()) {
         (*handle_result)(arg, block_iter->key(), block_iter->value());

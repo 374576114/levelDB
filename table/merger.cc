@@ -127,6 +127,9 @@ class MergingIterator : public Iterator {
     }
     return status;
   }
+  void GetIteratorInfo(uint64_t* file_number, uint64_t* offset, uint64_t* size) {
+    current_->WrapGetIteratorInfo(file_number, offset, size);
+  }
 
  private:
   // Which direction is the iterator moving?

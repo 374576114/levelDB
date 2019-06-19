@@ -21,6 +21,7 @@
 
 namespace leveldb {
 
+enum TableType;
 class BlockBuilder;
 class BlockHandle;
 class WritableFile;
@@ -49,7 +50,7 @@ class LEVELDB_EXPORT TableBuilder {
   // Add key,value to the table being constructed.
   // REQUIRES: key is after any previously added key according to comparator.
   // REQUIRES: Finish(), Abandon() have not been called
-  void Add(const Slice& key, const Slice& value);
+  void Add(const Slice& key, const Slice& value, TableType type = ImmSST);
 
   // Advanced operation: flush any buffered key/value pairs to file.
   // Can be used to ensure that two adjacent entries never live in
@@ -79,6 +80,10 @@ class LEVELDB_EXPORT TableBuilder {
   // Finish() call, returns the size of the final generated file.
   uint64_t FileSize() const;
 
+  // 设置tableBuilder的类型:immTable, indexTable, compacionTable and so on
+  void SetTableType(TableType type) { type_ = type };
+	char GetTableType() const { return static_cast<char>(type_); }
+
  private:
   bool ok() const { return status().ok(); }
   void WriteBlock(BlockBuilder* block, BlockHandle* handle);
@@ -86,6 +91,7 @@ class LEVELDB_EXPORT TableBuilder {
 
   struct Rep;
   Rep* rep_;
+	TableType type_;
 };
 
 }  // namespace leveldb

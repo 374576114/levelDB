@@ -18,6 +18,13 @@ class FilterPolicy;
 class Logger;
 class Snapshot;
 
+// 表示几种落盘的SST
+enum TableType {
+  ImmSST = 10,  // ImmTable直接落盘
+  IndexSST,     // K:pointer 方式
+  CompactionSST,// indexSST 继续compaction后生成，可与ImmSST相同
+};
+
 // DB contents are stored in a set of blocks, each of which holds a
 // sequence of key,value pairs.  Each block may be compressed before
 // being stored in a file.  The following enum describes which

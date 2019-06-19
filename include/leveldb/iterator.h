@@ -80,6 +80,22 @@ class LEVELDB_EXPORT Iterator {
   using CleanupFunction = void (*)(void* arg1, void* arg2);
   void RegisterCleanup(CleanupFunction function, void* arg1, void* arg2);
 
+	// 设置Iteration迭代来源：file_number, offset, size
+	virtual void SetIteratorInfo(uint64_t file_number, uint64_t off, uint64_t size) {
+	  file_number_ = file_number;
+	  offset_ = off;
+	  size_ = size;
+	};
+
+	// 当KV不分离时，返回本KV所在SST中对应值
+	// 当KV分离时，返回对应的pointer即可
+  virtual void GetIteratorInfo(uint64_t *file_number, uint64_t *off, uint64_t *size) const {
+		//TODO
+		*file_number = file_number_;
+		*off = offset_;
+		*size = size_;
+	};
+
  private:
   // Cleanup functions are stored in a single-linked list.
   // The list's head node is inlined in the iterator.
@@ -99,6 +115,9 @@ class LEVELDB_EXPORT Iterator {
     CleanupNode* next;
   };
   CleanupNode cleanup_head_;
+
+	// 生成indexSST需要，datablock遍历时生成
+	uint64_t file_number_, offset_, size_;
 };
 
 // Return an empty iterator (yields nothing).

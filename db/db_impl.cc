@@ -810,6 +810,7 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   Status s = env_->NewWritableFile(fname, &compact->outfile);
   if (s.ok()) {
     compact->builder = new TableBuilder(options_, compact->outfile);
+		compact->builder->SetTableType(IndexSST);
   }
   return s;
 }
@@ -928,7 +929,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     }
 
     Slice key = input->key();
-    // 准备结束compaction
+    // 准备结束一个SST，并写mata,index等数据到盘上
     if (compact->compaction->ShouldStopBefore(key) &&
         compact->builder != nullptr) {
       status = FinishCompactionOutputFile(compact, input);
@@ -994,7 +995,18 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         compact->current_output()->smallest.DecodeFrom(key);
       }
       compact->current_output()->largest.DecodeFrom(key);
-      compact->builder->Add(key, input->value());
+
+      if (input->value() < 24) { // 当Value比较小时，KV不做分离
+        compact->builder->Add(key, input->value());
+      } else {
+        std::string pointer;
+        uint64_t file_number, offset, size;
+        input->GetIteratorInfo(&file_number, &offset, &size);
+        PutVarint64(&pointer, file_number);
+        PutVarint64(&pointer, offset);
+        PutVarint64(&pointer, size);
+        compact->builder->Add(key, pointer, IndexSST);
+      }
 
       // Close output file if it is big enough
       if (compact->builder->FileSize() >=

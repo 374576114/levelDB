@@ -74,6 +74,10 @@ class IteratorWrapper {
     Update();
   }
 
+  void WrapGetIteratorInfo(uint64_t *file_number, uint64_t *offset, uint64_t *size) {
+    iter_->GetIteratorInfo(file_number, offset, size);
+  }
+
  private:
   void Update() {
     valid_ = iter_->Valid();

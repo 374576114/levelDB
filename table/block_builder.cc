@@ -70,14 +70,17 @@ Slice BlockBuilder::Finish() {
   return Slice(buffer_);
 }
 
-void BlockBuilder::Add(const Slice& key, const Slice& value) {
+void BlockBuilder::Add(const Slice& key, const Slice& value, TableType type) {
   Slice last_key_piece(last_key_);
+  
   assert(!finished_);
   assert(counter_ <= options_->block_restart_interval);
   assert(buffer_.empty()  // No values yet?
          || options_->comparator->Compare(key, last_key_piece) > 0);
+  
   size_t shared = 0;
   if (counter_ < options_->block_restart_interval) {
+  	// 计算与前一个KV中value的共享部分
     // See how much sharing to do with previous string
     const size_t min_length = std::min(last_key_piece.size(), key.size());
     while ((shared < min_length) && (last_key_piece[shared] == key[shared])) {
@@ -93,11 +96,13 @@ void BlockBuilder::Add(const Slice& key, const Slice& value) {
   // Add "<shared><non_shared><value_size>" to buffer_
   PutVarint32(&buffer_, shared);
   PutVarint32(&buffer_, non_shared);
-  PutVarint32(&buffer_, value.size());
+	// 附加上末尾的type
+  PutVarint32(&buffer_, value.size() + sizeof(char));
 
   // Add string delta to buffer_ followed by value
   buffer_.append(key.data() + shared, non_shared);
   buffer_.append(value.data(), value.size());
+	buffer_.append(static_cast<char>type, sizeof(1));
 
   // Update state
   last_key_.resize(shared);

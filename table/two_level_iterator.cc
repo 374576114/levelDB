@@ -156,8 +156,16 @@ void TwoLevelIterator::InitDataBlock() {
       Iterator* iter = (*block_function_)(arg_, options_, handle);
       data_block_handle_.assign(handle.data(), handle.size());
       SetDataIterator(iter);
+
+      BlockHandle block_handle;
+      block_handle.DecodeFrom(&handle);
+      iter->SetIteratorInfo(file_number_, block_handle.offset(), block_handle.size());
     }
   }
+}
+
+void TwoLevelIterator::GetIteratorInfo(uint64_t* file_number, uint64_t* offset, uint64_t* size) {
+  data_iter_->WrapGetIteratorInfo(file_number, offset, size);
 }
 
 }  // namespace
